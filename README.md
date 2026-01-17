@@ -6,7 +6,7 @@ Made for the host/moderator who wants to run the game smoothly without knowing p
 ## ⬇️ Download APK
 
 **Latest release:**  
-[Download APK](https://github.com/Cjlecap8899/mafia_host_app/releases/download/v1.0.0/mafia_host_app_v1.0.0.apk)
+[Download APK](https://github.com/Cjlecap8899/mafia_host_app/releases/download/v1.0.1/mafia_host_app_v1.0.1.apk)
 
 
 **SHA-256 checksum:**  
