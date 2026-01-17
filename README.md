@@ -3,6 +3,18 @@ Mafia Host Assistant (Offline)
 A lightweight offline helper app for Sports Mafia (classic tournament-style Mafia).
 Made for the host/moderator who wants to run the game smoothly without knowing players’ roles.
 
+## ⬇️ Download APK
+
+**Latest release:**  
+[Download APK](https://github.com/Cjlecap8899/mafia_host_app/releases/download/v1.0.0/mafia_host_app_v1.0.0.apk)
+
+
+**SHA-256 checksum:**  
+`3641757747aeb97d1f4d929be517bd3e706d6a89668773c5a7305d03abe276e6`
+
+---
+
+
 📸 Screenshots
 
 ![role_assignment](assets/screenshots/role_assignment.png)
