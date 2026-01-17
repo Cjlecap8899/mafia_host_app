@@ -1,8 +1,19 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id "com.android.application"
     id "kotlin-android"
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
+}
+
+// --- Release signing: ALWAYS read android/key.properties ---
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = new File(rootDir, "key.properties") // rootDir == android/
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+} else {
+    throw new GradleException("Missing android/key.properties for release signing.")
 }
 
 android {
@@ -27,13 +38,28 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            def storeFilePath = keystoreProperties.getProperty("storeFile")
+            if (storeFilePath == null || storeFilePath.trim().isEmpty()) {
+                throw new GradleException("storeFile is missing in android/key.properties")
+            }
+
+            keyAlias keystoreProperties.getProperty("keyAlias")
+            keyPassword keystoreProperties.getProperty("keyPassword")
+            storePassword keystoreProperties.getProperty("storePassword")
+
+            // storeFile is relative to android/ by design
+            storeFile file(storeFilePath)
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig signingConfigs.release
         }
     }
 }
-
 
 flutter {
     source = "../.."

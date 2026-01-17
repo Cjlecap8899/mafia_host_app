@@ -39,3 +39,15 @@ macos/Flutter/ephemeral/
 .idea/
 *.iml
 old versions/
+
+# Keystore / signing
+*.jks
+android/key.properties
+
+# Keystore (DO NOT COMMIT)
+android/upload-keystore.jks
+android/key.properties
+
+# Release artifacts
+*.apk
+*.aab
