@@ -1,5 +1,7 @@
 // lib/game_state.dart
+
 import 'package:flutter/material.dart';
+import 'game_log.dart';
 import 'i18n.dart';
 
 enum Role { citizen, mafia, don, sheriff }
@@ -22,13 +24,18 @@ class GameState {
   static int currentPlayerIndex = 0;
   static bool gameEnded = false;
 
-  // UI-строка (локализуется теперь через I18n)
-  static String nightResult = '';
+  static int selectedPlayerCount = 10;
+  static int nightNumber = 1;
+  static int dayNumber = 1;
 
-  // ✅ Источник правды для "кто умер" (без парсинга строки)
+  static String nightResult = '';
   static int? lastVictimNumber;
 
   static void reset({int count = 10}) {
+    selectedPlayerCount = count;
+    nightNumber = 1;
+	dayNumber = 1;
+
     final realCount = (count == 9) ? 10 : count;
     players = List.generate(realCount, (i) => Player(i + 1));
 
@@ -46,6 +53,16 @@ class GameState {
 
     if (count == 9 && players.length >= 10) {
       players[9].role = Role.citizen;
+
+      GameLogStore.logEvent(
+        type: 'card_received',
+        message: 'Player 10 received card 10 (Citizen)',
+        data: <String, dynamic>{
+          'playerNumber': 10,
+          'cardNumber': 10,
+          'role': 'Citizen',
+        },
+      );
     }
 
     mafiaVotes.clear();
@@ -72,14 +89,48 @@ class GameState {
     }
   }
 
+  static String debugRoleTitle(Role? role) {
+    switch (role) {
+      case Role.citizen:
+        return 'Citizen';
+      case Role.mafia:
+        return 'Mafia';
+      case Role.don:
+        return 'Don';
+      case Role.sheriff:
+        return 'Sheriff';
+      default:
+        return 'Unknown';
+    }
+  }
 
+  static String debugRoleLower(Role? role) {
+    switch (role) {
+      case Role.citizen:
+        return 'citizen';
+      case Role.mafia:
+        return 'mafia';
+      case Role.don:
+        return 'don';
+      case Role.sheriff:
+        return 'sheriff';
+      default:
+        return 'unknown';
+    }
+  }
+
+  static String debugSide(Role? role) {
+    if (role == Role.mafia || role == Role.don) {
+      return 'mafia side';
+    }
+    return 'town side';
+  }
 
   static Color getRoleColor(Role? role) {
     if (role == Role.citizen || role == Role.sheriff) return Colors.red;
     return Colors.black;
   }
 
-  /// Идемпотентно применяет lastVictimNumber к players.
   static void applyNightResultToPlayers() {
     final victimNumber = lastVictimNumber;
     if (victimNumber == null) return;
@@ -90,7 +141,6 @@ class GameState {
     victim.first.isAlive = false;
   }
 
-  /// Резолвит ночь БЕЗ навигации.
   static void resolveNight() {
     final Map<int, int> voteCount = <int, int>{};
     for (final v in mafiaVotes) {
@@ -122,6 +172,33 @@ class GameState {
     }
 
     applyNightResultToPlayers();
-    mafiaVotes.clear();
+
+    if (victim != null) {
+      final victimPlayer = players.firstWhere((p) => p.number == victim);
+      GameLogStore.logEvent(
+        type: 'night_result',
+        message:
+            'Night $nightNumber result: Player $victim (${debugRoleTitle(victimPlayer.role)}) was killed',
+        data: <String, dynamic>{
+          'nightNumber': nightNumber,
+          'victimPlayerNumber': victim,
+          'victimRole': debugRoleTitle(victimPlayer.role),
+          'mafiaVotes': List<int>.from(mafiaVotes),
+        },
+      );
+    } else {
+      GameLogStore.logEvent(
+        type: 'night_result',
+        message: 'Night $nightNumber result: No one was killed',
+        data: <String, dynamic>{
+          'nightNumber': nightNumber,
+          'mafiaVotes': List<int>.from(mafiaVotes),
+        },
+      );
+    }
+
+	mafiaVotes.clear();
+	nightNumber++;
+	dayNumber++;
   }
 }

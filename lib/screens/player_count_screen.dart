@@ -1,14 +1,20 @@
+// lib/screens/player_count_screen.dart
+
 import 'package:flutter/material.dart';
 
+import '../game_log.dart';
 import '../game_state.dart';
 import '../i18n.dart';
+import 'game_logs_screen.dart';
 import 'role_selection_screen.dart';
 
 class PlayerCountScreen extends StatelessWidget {
   const PlayerCountScreen({super.key});
 
   void startGame(BuildContext context, int count) {
+    GameLogStore.startNewGame(playerCount: count);
     GameState.reset(count: count);
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
@@ -28,8 +34,18 @@ class PlayerCountScreen extends StatelessWidget {
               I18n.tr('player_count_title'),
               style: const TextStyle(color: Colors.white),
             ),
-            actions: const [
-              LangMenuButton(),
+            actions: [
+              IconButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const GameLogsScreen()),
+                  );
+                },
+                icon: const Icon(Icons.article_outlined),
+                color: Colors.white,
+              ),
+              const LangMenuButton(),
             ],
           ),
           body: Center(

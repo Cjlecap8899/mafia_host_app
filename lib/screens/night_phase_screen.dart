@@ -1,9 +1,12 @@
+// lib/screens/night_phase_screen.dart
+
 import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../game_log.dart';
 import '../game_state.dart';
 import '../i18n.dart';
 import 'game_panel_screen.dart';
@@ -29,6 +32,20 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
   bool finishedAll = false;
   Color resultColor = Colors.black;
 
+  int? _shotTargetNumber;
+  Role? _shotTargetRole;
+  int? _checkTargetNumber;
+  Role? _checkTargetRole;
+  bool _citizenSolved = false;
+  String? _specialPlayer10Decision;
+
+  bool get isNinePlayerMode => GameState.selectedPlayerCount == 9;
+
+  bool get isTenthCitizenInNinePlayerMode =>
+      isNinePlayerMode &&
+      currentPlayer?.number == 10 &&
+      currentPlayer?.role == Role.citizen;
+
   @override
   void initState() {
     super.initState();
@@ -40,8 +57,6 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
     _timer?.cancel();
     super.dispose();
   }
-
-  // ---------- Helpers ----------
 
   String _roleLabel(Role? role) {
     switch (role) {
@@ -112,7 +127,28 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
     );
   }
 
-  // ---------- Night logic ----------
+  Future<bool?> _showDeletePlayer10Dialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        title: Text(
+          I18n.tr('delete_player_10_q'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(I18n.tr('no')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(I18n.tr('yes')),
+          ),
+        ],
+      ),
+    );
+  }
 
   void nextPlayer() {
     if (GameState.currentPlayerIndex >= GameState.players.length) {
@@ -137,6 +173,12 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
       resultColor = Colors.black;
       donChecked = false;
       mafiaShot = false;
+      _shotTargetNumber = null;
+      _shotTargetRole = null;
+      _checkTargetNumber = null;
+      _checkTargetRole = null;
+      _citizenSolved = false;
+      _specialPlayer10Decision = null;
     });
   }
 
@@ -162,18 +204,199 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
   void startTimer() {
     secondsLeft = 15;
     _timer?.cancel();
+
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() => secondsLeft--);
+
       if (secondsLeft <= 0) {
         timer.cancel();
-        GameState.currentPlayerIndex++;
-        nextPlayer();
+        _handleTimerExpired();
       }
     });
   }
 
+  void _handleTimerExpired() {
+    final player = currentPlayer;
+    if (player == null) return;
+
+    if (player.role == Role.citizen) {
+      GameLogStore.logEvent(
+        type: 'night_action',
+        message:
+            'Night ${GameState.nightNumber}: Player ${player.number} (Citizen) failed to solve the task',
+        data: <String, dynamic>{
+          'nightNumber': GameState.nightNumber,
+          'playerNumber': player.number,
+          'role': 'Citizen',
+          'question': mathQuestion,
+          'correctAnswer': correctAnswer,
+          'enteredAnswer': inputAnswer,
+        },
+      );
+    } else if (player.role == Role.sheriff && _checkTargetNumber == null) {
+      GameLogStore.logEvent(
+        type: 'night_action',
+        message:
+            'Night ${GameState.nightNumber}: Player ${player.number} (Sheriff) made no check',
+        data: <String, dynamic>{
+          'nightNumber': GameState.nightNumber,
+          'playerNumber': player.number,
+          'role': 'Sheriff',
+        },
+      );
+    } else if (player.role == Role.mafia && _shotTargetNumber == null) {
+      GameLogStore.logEvent(
+        type: 'night_action',
+        message:
+            'Night ${GameState.nightNumber}: Player ${player.number} (Mafia) made no shot',
+        data: <String, dynamic>{
+          'nightNumber': GameState.nightNumber,
+          'playerNumber': player.number,
+          'role': 'Mafia',
+        },
+      );
+    } else if (player.role == Role.don) {
+      if (_shotTargetNumber == null && _checkTargetNumber == null) {
+        GameLogStore.logEvent(
+          type: 'night_action',
+          message:
+              'Night ${GameState.nightNumber}: Player ${player.number} (Don) made no shot and no check',
+          data: <String, dynamic>{
+            'nightNumber': GameState.nightNumber,
+            'playerNumber': player.number,
+            'role': 'Don',
+          },
+        );
+      } else if (_shotTargetNumber != null && _checkTargetNumber == null) {
+        GameLogStore.logEvent(
+          type: 'night_action',
+          message:
+              'Night ${GameState.nightNumber}: Player ${player.number} (Don) shot Player $_shotTargetNumber (${GameState.debugRoleTitle(_shotTargetRole)}) and made no check',
+          data: <String, dynamic>{
+            'nightNumber': GameState.nightNumber,
+            'playerNumber': player.number,
+            'role': 'Don',
+            'shotTargetNumber': _shotTargetNumber,
+            'shotTargetRole': GameState.debugRoleTitle(_shotTargetRole),
+          },
+        );
+      } else if (_shotTargetNumber == null && _checkTargetNumber != null) {
+        GameLogStore.logEvent(
+          type: 'night_action',
+          message:
+              'Night ${GameState.nightNumber}: Player ${player.number} (Don) made no shot and checked Player $_checkTargetNumber (${GameState.debugRoleTitle(_checkTargetRole)})',
+          data: <String, dynamic>{
+            'nightNumber': GameState.nightNumber,
+            'playerNumber': player.number,
+            'role': 'Don',
+            'checkTargetNumber': _checkTargetNumber,
+            'checkTargetRole': GameState.debugRoleTitle(_checkTargetRole),
+          },
+        );
+      }
+    }
+
+    GameState.currentPlayerIndex++;
+    nextPlayer();
+  }
+
   void submitAction() {
     _timer?.cancel();
+
+    final player = currentPlayer;
+    if (player == null) return;
+
+    if (isTenthCitizenInNinePlayerMode && _specialPlayer10Decision != null) {
+      if (_specialPlayer10Decision == 'delete') {
+        GameLogStore.logEvent(
+          type: 'night_action',
+          message:
+              'Night ${GameState.nightNumber}: Player 10 (Citizen) chose the special forced kill on Player 10 (Citizen)',
+          data: <String, dynamic>{
+            'nightNumber': GameState.nightNumber,
+            'playerNumber': 10,
+            'role': 'Citizen',
+            'specialDecision': 'delete',
+          },
+        );
+      } else {
+        GameLogStore.logEvent(
+          type: 'night_action',
+          message:
+              'Night ${GameState.nightNumber}: Player 10 (Citizen) skipped the special forced kill',
+          data: <String, dynamic>{
+            'nightNumber': GameState.nightNumber,
+            'playerNumber': 10,
+            'role': 'Citizen',
+            'specialDecision': 'skip',
+          },
+        );
+      }
+
+      GameState.currentPlayerIndex++;
+      nextPlayer();
+      return;
+    }
+
+    if (player.role == Role.citizen) {
+      GameLogStore.logEvent(
+        type: 'night_action',
+        message:
+            'Night ${GameState.nightNumber}: Player ${player.number} (Citizen) solved the task',
+        data: <String, dynamic>{
+          'nightNumber': GameState.nightNumber,
+          'playerNumber': player.number,
+          'role': 'Citizen',
+          'question': mathQuestion,
+          'correctAnswer': correctAnswer,
+          'enteredAnswer': inputAnswer,
+        },
+      );
+    } else if (player.role == Role.sheriff && _checkTargetNumber != null) {
+      GameLogStore.logEvent(
+        type: 'night_action',
+        message:
+            'Night ${GameState.nightNumber}: Player ${player.number} (Sheriff) checked Player $_checkTargetNumber (${GameState.debugRoleTitle(_checkTargetRole)})',
+        data: <String, dynamic>{
+          'nightNumber': GameState.nightNumber,
+          'playerNumber': player.number,
+          'role': 'Sheriff',
+          'targetPlayerNumber': _checkTargetNumber,
+          'targetRole': GameState.debugRoleTitle(_checkTargetRole),
+        },
+      );
+    } else if (player.role == Role.mafia && _shotTargetNumber != null) {
+      GameLogStore.logEvent(
+        type: 'night_action',
+        message:
+            'Night ${GameState.nightNumber}: Player ${player.number} (Mafia) shot Player $_shotTargetNumber (${GameState.debugRoleTitle(_shotTargetRole)})',
+        data: <String, dynamic>{
+          'nightNumber': GameState.nightNumber,
+          'playerNumber': player.number,
+          'role': 'Mafia',
+          'targetPlayerNumber': _shotTargetNumber,
+          'targetRole': GameState.debugRoleTitle(_shotTargetRole),
+        },
+      );
+    } else if (player.role == Role.don &&
+        _shotTargetNumber != null &&
+        _checkTargetNumber != null) {
+      GameLogStore.logEvent(
+        type: 'night_action',
+        message:
+            'Night ${GameState.nightNumber}: Player ${player.number} (Don) shot Player $_shotTargetNumber (${GameState.debugRoleTitle(_shotTargetRole)}) and checked Player $_checkTargetNumber (${GameState.debugRoleTitle(_checkTargetRole)})',
+        data: <String, dynamic>{
+          'nightNumber': GameState.nightNumber,
+          'playerNumber': player.number,
+          'role': 'Don',
+          'shotTargetNumber': _shotTargetNumber,
+          'shotTargetRole': GameState.debugRoleTitle(_shotTargetRole),
+          'checkTargetNumber': _checkTargetNumber,
+          'checkTargetRole': GameState.debugRoleTitle(_checkTargetRole),
+        },
+      );
+    }
+
     GameState.currentPlayerIndex++;
     nextPlayer();
   }
@@ -185,6 +408,42 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
       context,
       MaterialPageRoute(builder: (_) => const GamePanelScreen()),
     );
+  }
+
+  Future<void> _handleOpenRoleTap() async {
+    final confirm = await _showOpenRoleDialog();
+    if (confirm != true) return;
+
+    if (isTenthCitizenInNinePlayerMode) {
+      final shouldDelete = await _showDeletePlayer10Dialog();
+
+      if (shouldDelete == true) {
+        final mafiaAlive = GameState.players
+            .where((p) => p.isAlive && (p.role == Role.mafia || p.role == Role.don))
+            .length;
+
+        GameState.mafiaVotes.clear();
+
+        for (int i = 0; i < mafiaAlive; i++) {
+          GameState.mafiaVotes.add(10);
+        }
+
+        _specialPlayer10Decision = 'delete';
+        submitAction();
+        return;
+      }
+
+      if (shouldDelete == false) {
+        _specialPlayer10Decision = 'skip';
+        submitAction();
+        return;
+      }
+
+      return;
+    }
+
+    setState(() => showActionUI = true);
+    startTimer();
   }
 
   Widget buildResultBox(String text, Color background) {
@@ -207,8 +466,6 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
     );
   }
 
-  // ---------- UI ----------
-
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<AppLang>(
@@ -218,6 +475,13 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
           onWillPop: () async {
             final shouldExit = await _showExitDialog();
             if (shouldExit == true) {
+              await GameLogStore.finishCurrentGame(
+                resultMessage: 'Game ended: app closed',
+                extraData: <String, dynamic>{
+                  'reason': 'app_closed',
+                },
+              );
+
               SystemNavigator.pop();
             }
             return false;
@@ -312,13 +576,7 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
                       child: Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () async {
-                            final confirm = await _showOpenRoleDialog();
-                            if (confirm == true) {
-                              setState(() => showActionUI = true);
-                              startTimer();
-                            }
-                          },
+                          onTap: _handleOpenRoleTap,
                         ),
                       ),
                     ),
@@ -382,7 +640,12 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
                     backgroundColor: Colors.black,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: int.tryParse(inputAnswer) == correctAnswer ? submitAction : null,
+                  onPressed: int.tryParse(inputAnswer) == correctAnswer
+                      ? () {
+                          _citizenSolved = true;
+                          submitAction();
+                        }
+                      : null,
                   child: Text(
                     I18n.tr('next'),
                     style: const TextStyle(fontSize: 22),
@@ -407,6 +670,9 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
                             ),
                             onPressed: () {
                               final isMafia = p.role == Role.mafia || p.role == Role.don;
+
+                              _checkTargetNumber = p.number;
+                              _checkTargetRole = p.role;
 
                               setState(() {
                                 roleResult = isMafia
@@ -453,6 +719,9 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
                             ),
                             onPressed: () {
                               GameState.mafiaVotes.add(p.number);
+                              _shotTargetNumber = p.number;
+                              _shotTargetRole = p.role;
+
                               setState(() => mafiaShot = true);
                             },
                             child: Text(
@@ -478,6 +747,9 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
                             ),
                             onPressed: () {
                               final isSheriff = p.role == Role.sheriff;
+
+                              _checkTargetNumber = p.number;
+                              _checkTargetRole = p.role;
 
                               setState(() {
                                 roleResult = isSheriff
@@ -525,6 +797,9 @@ class _NightPhaseScreenState extends State<NightPhaseScreen> {
                             ),
                             onPressed: () {
                               GameState.mafiaVotes.add(p.number);
+                              _shotTargetNumber = p.number;
+                              _shotTargetRole = p.role;
+
                               setState(() => mafiaShot = true);
                             },
                             child: Text(

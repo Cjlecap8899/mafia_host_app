@@ -31,10 +31,10 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.mafia_2"
+        applicationId = "com.artyai.mafiaapp"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
+        targetSdk = 35
+		versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 

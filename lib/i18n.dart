@@ -360,6 +360,12 @@ class I18n {
 	  AppLang.ukr: 'вийшов!',
 	  AppLang.esp: 'acabó!',
 	},
+    'delete_player_10_q': {
+      AppLang.rus: 'Удалить Игрока №10?',
+      AppLang.eng: 'Remove Player №10?',
+      AppLang.ukr: 'Видалити Гравця №10?',
+      AppLang.esp: '¿Eliminar al Jugador №10?',
+    },
   };
 
   static String tr(String key) {

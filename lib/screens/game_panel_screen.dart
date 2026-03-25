@@ -1,5 +1,8 @@
+// lib/screens/game_panel_screen.dart
+
 import 'package:flutter/material.dart';
 
+import '../game_log.dart';
 import '../game_state.dart';
 import '../i18n.dart';
 import 'player_count_screen.dart';
@@ -23,27 +26,22 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
   final GlobalKey<GameTimerButtonState> _timerKey30 = GlobalKey();
   final GlobalKey<GameTimerButtonState> _timerKey60 = GlobalKey();
 
-  // --- Голосование (только живые игроки) ---
   final List<int> _activeOrder = <int>[];
   final Map<int, int?> _votes = <int, int?>{};
-
-  @override
-  void initState() {
-    super.initState();
-    GameState.applyNightResultToPlayers();
-  }
-
-  // ---------- Диалоги ----------
 
   Future<bool?> _showExitDialog() {
     return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF2A2A2A),
-        title: Text(I18n.tr('confirm_title'),
-            style: const TextStyle(color: Colors.white)),
-        content: Text(I18n.tr('exit_q_short'),
-            style: const TextStyle(color: Colors.white)),
+        title: Text(
+          I18n.tr('confirm_title'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          I18n.tr('exit_q_short'),
+          style: const TextStyle(color: Colors.white),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -63,10 +61,14 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF2A2A2A),
-        title: Text(I18n.tr('confirm_title'),
-            style: const TextStyle(color: Colors.white)),
-        content: Text(I18n.tr('start_over_q'),
-            style: const TextStyle(color: Colors.white)),
+        title: Text(
+          I18n.tr('confirm_title'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          I18n.tr('start_over_q'),
+          style: const TextStyle(color: Colors.white),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -86,10 +88,14 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF2A2A2A),
-        title: Text(I18n.tr('confirm_title'),
-            style: const TextStyle(color: Colors.white)),
-        content: Text(I18n.tr('go_to_night_q'),
-            style: const TextStyle(color: Colors.white)),
+        title: Text(
+          I18n.tr('confirm_title'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          I18n.tr('go_to_night_q'),
+          style: const TextStyle(color: Colors.white),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -135,11 +141,9 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
     );
   }
 
-  // ---------- Логика игры ----------
-
   void deletePlayer() async {
     setState(() => dialogShown = true);
-  
+
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -182,21 +186,27 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
                         ],
                       ),
                     );
-  
+
                     if (confirm == true) {
                       setState(() {
                         p.isAlive = false;
-  
                         GameState.lastVictimNumber = p.number;
-  
-                        // ✅ ЛОКАЛИЗОВАННАЯ строка
                         GameState.nightResult =
                             I18n.trVars('player_removed', {'n': '${p.number}'});
-  
                         showNightResult = true;
                       });
+
+                      GameLogStore.logEvent(
+                        type: 'player_removed',
+						message:
+							'Day ${GameState.dayNumber}: Player ${p.number} (${GameState.debugRoleTitle(p.role)}) was removed',
+                        data: <String, dynamic>{
+                          'playerNumber': p.number,
+                          'role': GameState.debugRoleTitle(p.role),
+                        },
+                      );
                     }
-  
+
                     Navigator.pop(context);
                   },
                   child: Text(I18n.playerPlain(p.number)),
@@ -206,10 +216,9 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
         ),
       ),
     );
-  
+
     setState(() => dialogShown = false);
   }
-
 
   void proceedToNight() {
     _timerKey30.currentState?.stopTimer();
@@ -224,16 +233,14 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => NightPhaseScreen()),
+      MaterialPageRoute(builder: (_) => const NightPhaseScreen()),
     );
   }
 
-  void processNightResult() {
+  void processNightResult() async {
     setState(() {
       showNightResult = false;
-
       GameState.applyNightResultToPlayers();
-
       _sanitizeVoteState();
     });
 
@@ -255,23 +262,45 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
         GameState.players.firstWhere((p) => p.role == Role.sheriff).number;
 
     if (mafiaCount == 0) {
+      final message = I18n.trVars('victory_town', {
+        'mafiaNums': mafiaNums,
+        'sheriff': '$sheriff',
+      });
+
       setState(() {
-        victoryMessage = I18n.trVars('victory_town', {
-          'mafiaNums': mafiaNums,
-          'sheriff': '$sheriff',
-        });
+        victoryMessage = message;
         victoryColor = Colors.red;
         showVictory = true;
       });
-    } else if (mafiaCount >= townCount) {
-      setState(() {
-        victoryMessage = I18n.trVars('victory_mafia', {
+
+      await GameLogStore.finishCurrentGame(
+        resultMessage: 'Game ended: town victory',
+        extraData: <String, dynamic>{
+          'winner': 'town',
           'mafiaNums': mafiaNums,
-          'sheriff': '$sheriff',
-        });
+          'sheriff': sheriff,
+        },
+      );
+    } else if (mafiaCount >= townCount) {
+      final message = I18n.trVars('victory_mafia', {
+        'mafiaNums': mafiaNums,
+        'sheriff': '$sheriff',
+      });
+
+      setState(() {
+        victoryMessage = message;
         victoryColor = Colors.white;
         showVictory = true;
       });
+
+      await GameLogStore.finishCurrentGame(
+        resultMessage: 'Game ended: mafia victory',
+        extraData: <String, dynamic>{
+          'winner': 'mafia',
+          'mafiaNums': mafiaNums,
+          'sheriff': sheriff,
+        },
+      );
     }
   }
 
@@ -281,7 +310,15 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
     setState(() => dialogShown = false);
 
     if (confirmed == true) {
+      await GameLogStore.finishCurrentGame(
+        resultMessage: 'Game ended: new game started',
+        extraData: <String, dynamic>{
+          'reason': 'new_game_started',
+        },
+      );
+
       GameState.reset();
+
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const PlayerCountScreen()),
@@ -293,6 +330,7 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
   void handleFoul(int number, {required bool remove}) {
     setState(() {
       final player = GameState.players.firstWhere((p) => p.number == number);
+
       if (remove) {
         if (player.foulCount > 0) player.foulCount--;
       } else {
@@ -300,8 +338,6 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
       }
     });
   }
-
-  // ---------- Голосование: только живые игроки ----------
 
   List<int> _aliveNumbers() {
     final alive = GameState.players
@@ -338,10 +374,23 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
     if (!aliveSet.contains(n)) return;
 
     if (!_isActive(n)) {
+      final player = GameState.players.firstWhere((p) => p.number == n);
+
       setState(() {
         _activeOrder.add(n);
         _votes[n] = null;
       });
+
+      GameLogStore.logEvent(
+        type: 'player_nominated',
+		message:
+			'Day ${GameState.dayNumber}: Player $n (${GameState.debugRoleTitle(player.role)}) was nominated for voting',
+        data: <String, dynamic>{
+          'playerNumber': n,
+          'role': GameState.debugRoleTitle(player.role),
+        },
+      );
+
       return;
     }
 
@@ -454,8 +503,6 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
     );
   }
 
-  // ---------- UI ----------
-
   @override
   Widget build(BuildContext context) {
     final hideMainUI = showNightResult || showVictory;
@@ -469,8 +516,17 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
             dialogShown = true;
 
             final shouldExit = await _showExitDialog();
-
             dialogShown = false;
+
+            if (shouldExit == true) {
+              await GameLogStore.finishCurrentGame(
+                resultMessage: 'Game ended: app closed',
+                extraData: <String, dynamic>{
+                  'reason': 'app_closed',
+                },
+              );
+            }
+
             return shouldExit ?? false;
           },
           child: Scaffold(
@@ -508,10 +564,8 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
                             .where((p) => p.isAlive)
                             .map(
                               (p) => GestureDetector(
-                                onTap: () =>
-                                    handleFoul(p.number, remove: false),
-                                onDoubleTap: () =>
-                                    handleFoul(p.number, remove: true),
+                                onTap: () => handleFoul(p.number, remove: false),
+                                onDoubleTap: () => handleFoul(p.number, remove: true),
                                 child: Card(
                                   color: Colors.grey[900],
                                   child: Container(
@@ -525,13 +579,15 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
                                           TextSpan(
                                             text: '${p.number}',
                                             style: const TextStyle(
-                                                color: Colors.white),
+                                              color: Colors.white,
+                                            ),
                                           ),
                                           if (p.foulCount > 0)
                                             TextSpan(
                                               text: ' ${'!' * p.foulCount}',
                                               style: const TextStyle(
-                                                  color: Colors.red),
+                                                color: Colors.red,
+                                              ),
                                             ),
                                         ],
                                       ),
@@ -562,7 +618,6 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
               ),
             ],
           ),
-
         if (showVictory) ...[
           Align(
             alignment: Alignment.topCenter,
@@ -586,8 +641,7 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 textStyle: const TextStyle(fontSize: 14),
               ),
               onPressed: resetGame,
@@ -595,23 +649,22 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
             ),
           ),
         ],
-
         if (showNightResult)
           Center(
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
                 textStyle: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.bold),
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               onPressed: processNightResult,
               child: Text(GameState.nightResult),
             ),
           ),
-
         if (!hideMainUI)
           Positioned(
             bottom: 90,
@@ -624,7 +677,6 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
               ],
             ),
           ),
-
         if (!hideMainUI)
           Positioned(
             bottom: 20,
@@ -633,15 +685,13 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 textStyle: const TextStyle(fontSize: 14),
               ),
               onPressed: resetGame,
               child: Text(I18n.tr('new_game')),
             ),
           ),
-
         if (!hideMainUI)
           Positioned(
             bottom: 20,
@@ -650,20 +700,21 @@ class _GamePanelScreenState extends State<GamePanelScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 textStyle: const TextStyle(fontSize: 14),
               ),
               onPressed: () async {
                 setState(() => dialogShown = true);
                 final confirm = await _showNightPhaseDialog();
                 setState(() => dialogShown = false);
-                if (confirm == true) proceedToNight();
+
+                if (confirm == true) {
+                  proceedToNight();
+                }
               },
               child: Text(I18n.tr('night_phase')),
             ),
           ),
-
         if (dialogShown)
           Positioned.fill(
             child: AbsorbPointer(

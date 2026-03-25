@@ -1,6 +1,9 @@
+// lib/screens/role_selection_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../game_log.dart';
 import '../game_state.dart';
 import '../i18n.dart';
 import 'game_panel_screen.dart';
@@ -19,10 +22,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   int? selectedCardIndex;
   bool roleRevealed = false;
 
-  bool get isLastAutoAssigned =>
-      GameState.players.length == 10 &&
-      currentPlayer == 10 &&
-      GameState.players[9].role == Role.citizen;
+  bool get isNinePlayerMode =>
+      GameState.players.length == 10 && GameState.players[9].role == Role.citizen;
 
   Future<bool?> _confirmReveal() {
     return showDialog<bool>(
@@ -52,14 +53,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   }
 
   Future<void> onPlayerTap() async {
-    if (isLastAutoAssigned) {
-      final confirm = await _confirmReveal();
-      if (confirm != true) return;
-
-      setState(() => roleRevealed = true);
-      return;
-    }
-
     if (GameState.rolePool.length == 1) {
       final confirm = await _confirmReveal();
       if (confirm != true) return;
@@ -67,6 +60,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       final player = GameState.players[currentPlayer - 1];
       player.role = GameState.rolePool.first;
       GameState.rolePool.removeAt(0);
+
+      GameLogStore.logEvent(
+        type: 'card_received',
+        message:
+            'Player ${player.number} received card 1 (${GameState.debugRoleTitle(player.role)})',
+        data: <String, dynamic>{
+          'playerNumber': player.number,
+          'cardNumber': 1,
+          'role': GameState.debugRoleTitle(player.role),
+        },
+      );
 
       setState(() => roleRevealed = true);
       return;
@@ -83,6 +87,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     player.role = GameState.rolePool[index];
     selectedCardIndex = index;
 
+    GameLogStore.logEvent(
+      type: 'card_received',
+      message:
+          'Player ${player.number} received card ${index + 1} (${GameState.debugRoleTitle(player.role)})',
+      data: <String, dynamic>{
+        'playerNumber': player.number,
+        'cardNumber': index + 1,
+        'role': GameState.debugRoleTitle(player.role),
+      },
+    );
+
     setState(() => roleRevealed = true);
   }
 
@@ -90,6 +105,16 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     if (selectedCardIndex != null &&
         GameState.rolePool.length > selectedCardIndex!) {
       GameState.rolePool.removeAt(selectedCardIndex!);
+    }
+
+    if (isNinePlayerMode && currentPlayer == 9) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const GamePanelScreen(),
+        ),
+      );
+      return;
     }
 
     setState(() {
@@ -131,71 +156,19 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     );
 
     if (confirmed == true) {
+      await GameLogStore.finishCurrentGame(
+        resultMessage: 'Game ended: new game started',
+        extraData: <String, dynamic>{
+          'reason': 'new_game_started',
+        },
+      );
+
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const PlayerCountScreen()),
         (route) => false,
       );
     }
-  }
-
-  List<Widget> buildCardRows() {
-    final List<Widget> rows = [];
-    final List<int> indexes =
-        List<int>.generate(GameState.rolePool.length, (i) => i);
-
-    final List<List<int>> layout = <List<int>>[
-      indexes.take(3).toList(),
-      indexes.skip(3).take(3).toList(),
-      indexes.skip(6).take(3).toList(),
-      indexes.skip(9).toList(),
-    ];
-
-    for (final row in layout) {
-      if (row.isEmpty) continue;
-
-      rows.add(
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: row
-              .map(
-                (i) => GestureDetector(
-                  onTap: () => selectCard(i),
-                  child: Container(
-                    width: 90,
-                    height: 140,
-                    margin: const EdgeInsets.all(6),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Image.asset(
-                          'assets/images/roles/background.png',
-                          fit: BoxFit.cover,
-                        ),
-                        Text(
-                          '${i + 1}',
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(
-                                blurRadius: 2,
-                                color: Colors.black,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-      );
-    }
-    return rows;
   }
 
   @override
@@ -233,6 +206,13 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
             );
 
             if (shouldExit == true) {
+              await GameLogStore.finishCurrentGame(
+                resultMessage: 'Game ended: app closed',
+                extraData: <String, dynamic>{
+                  'reason': 'app_closed',
+                },
+              );
+
               SystemNavigator.pop();
             }
 
@@ -351,5 +331,64 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         );
       },
     );
+  }
+
+  List<Widget> buildCardRows() {
+    final List<Widget> rows = [];
+    final List<int> indexes =
+        List<int>.generate(GameState.rolePool.length, (i) => i);
+
+    final List<List<int>> layout = <List<int>>[
+      indexes.take(3).toList(),
+      indexes.skip(3).take(3).toList(),
+      indexes.skip(6).take(3).toList(),
+      indexes.skip(9).toList(),
+    ];
+
+    for (final row in layout) {
+      if (row.isEmpty) continue;
+
+      rows.add(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: row
+              .map(
+                (i) => GestureDetector(
+                  onTap: () => selectCard(i),
+                  child: Container(
+                    width: 90,
+                    height: 140,
+                    margin: const EdgeInsets.all(6),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Image.asset(
+                          'assets/images/roles/background.png',
+                          fit: BoxFit.cover,
+                        ),
+                        Text(
+                          '${i + 1}',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                blurRadius: 2,
+                                color: Colors.black,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+    return rows;
   }
 }
